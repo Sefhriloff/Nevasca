@@ -8,7 +8,7 @@ Nevasca is an HTML5 remake of the Lumisota client. This client is designed to wo
 
 ## Preview
 
-https://github.com/Sefhriloff/Nevasca/assets/41347100/f969b93c-4f43-4c47-a51f-b360859c7395
+https://github.com/Sefhriloff/Nevasca/assets/41347100/6a7613f3-0823-4b0c-a277-9a999fcd776f
 
 
 
