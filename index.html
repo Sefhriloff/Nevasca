@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="UTF-8">
+		<meta name="robots" content="noindex">
+	</head>
+	<body style="background-color: black;" onload="gameStart()">
+  	  <canvas id="Stage" width="640" height="480"></canvas>
+	</body>
+</html>
+<script>
+    cnv = document.getElementById("Stage");
+    ctx = cnv.getContext("2d", { alpha: true });
+
+    _server = "ws://localhost:55555";
+    _username = "joao";
+    _password = "pw";
+
+    _language = "en";
+    
+
+
+    _languages = {};
+    _background = [];
+    _heightmap = [];
+    _objects = {};
+    _windows = {};
+
+    _lumisota = false;
+    _resources = {}
+
+    _backgrounds = {
+        "lobby": {
+            "elements": [
+                { name: 'lumibackground', loc: { h: 0, v: 0 } },
+                { name: 'majatausta', loc: { h: 247, v: 240 } }
+            ]
+        },
+        "lumisota3": {
+            "elements": [
+                { name: 'background', loc: { h: 261, v: 202 } }
+            ]
+        },
+        "results": {
+            "elements": [
+                { name: 'background', loc: { h: 261, v: 202 } },
+                { name: '210', loc: { h: 563, v: 125 } },
+                { name: '410', loc: { h: 403, v: 258 } },
+                { name: '211', loc: { h: 660, v: 368 } },
+                { name: 'tree_a_0_0_0', loc: { h: 58, v: 39 } },
+                { name: 'tree_a_0_0_0', loc: { h: 8, v: 62 } },
+                { name: 'tree_a_0_0_0', loc: { h: 64, v: 90 } },
+                { name: 'tree_a_0_0_0', loc: { h: 35, v: 118 } },
+                { name: 'tree_a_0_0_0', loc: { h: 8, v: 146 } },
+                { name: 'treesmall_a_0_0_0', loc: { h: 120, v: 48 } },
+                { name: 'tree_a_0_0_0', loc: { h: 48, v: 194 } },
+                { name: 'treesmall_a_0_0_0', loc: { h: -9, v: 228 } },
+                { name: 'tree_a_0_0_0', loc: { h: 176, v: 20 } },
+                { name: 'tree_a_0_0_0', loc: { h: 540, v: 20 } },
+                { name: 'treesmall_a_0_0_0', loc: { h: 582, v: 55 } },
+                { name: 'tree_a_0_0_0', loc: { h: 610, v: 111 } },
+                { name: 'tree_a_0_0_0', loc: { h: 470, v: -1 } },
+                { name: '211', loc: { h: 58, v: 207 } },
+                { name: 'treesmall_a_0_0_0', loc: { h: 8, v: 286 } },
+                { name: '539', loc: { h: 584, v: 366 } },
+                { name: '538', loc: { h: 625, v: 340 } }
+            ]
+
+        }
+    };
+
+    _layers = ["a", "b", "c", "d", "e"];
+
+    //#region Language
+
+    function getText(key) {
+        return (_languages[_language][key] != null) ? _languages[_language][key] : key;
+    }
+
+
+    //#endregion
+
+    //#region World Objects
+    function snowballObject(id, startLoc, endLoc, flyTime) {
+        var tloc = getScreenCoordinate(startLoc[0], startLoc[1], startLoc[2]);
+        this.id = id;
+        this.startLoc = startLoc;
+        this.endLoc = endLoc;
+        this.flyTime = flyTime;
+
+        this.startTime = Date.now();
+
+        this.h = tloc[0];
+        this.v = tloc[1];
+        this.z = tloc[2];
+
+        this.shadowH = 0;
+        this.shadowV = 0;
+    }
+    snowballObject.prototype.countloc = function (t) {
+        if (t > this.flyTime) t = this.flyTime;
+        var newLoc = [this.startLoc[0] + (t * this.endLoc[0]), this.startLoc[1] + (t * this.endLoc[1]), this.startLoc[2] + (t * this.endLoc[2])];
+        newLoc[2] = this.startLoc[2] + ((this.endLoc[2] * t / 1000) - (0.5 * 40 * t * t / 1000000));
+        return newLoc;
+    }
+    snowballObject.prototype.render = function () {
+        drawSprite("snowball", this.h, this.v);
+        drawSprite("snowballshadow", this.shadowH, this.shadowV);
+    }
+    snowballObject.prototype.update = function () {
+        var t = Date.now() - this.startTime;
+        if (t > this.flyTime) {
+            if (_objects["SNOWBALL_" + this.id] != null) delete _objects["SNOWBALL_" + this.id];
+            return;
+        }
+        var newLoc = this.countloc(t);
+        var screenlocs = getScreenCoordinate(newLoc[0], newLoc[1], newLoc[2]);
+        var shadowlocs = getScreenCoordinate(newLoc[0], newLoc[1], 0);
+
+        this.h = screenlocs[0];
+        this.v = screenlocs[1];
+        this.z = screenlocs[2];
+
+        this.shadowH = shadowlocs[0];
+        this.shadowV = shadowlocs[1];
+    }
+
+    function mapObject(id, sprite, x, y, a, dir, zshift = 0) {
+        var tloc = getScreenCoordinate(x, y, a);
+        this.sprite = sprite;
+
+        this.x = x;
+        this.y = y;
+        this.a = a;
+        this.dir = dir;
+        this.h = tloc[0];
+        this.v = tloc[1];
+        this.z = tloc[2] + zshift;
+    }
+    mapObject.prototype.render = function () {
+        drawSprite(this.sprite, this.h, this.v);
+    }
+    mapObject.prototype.update = function () {
+
+    }
+
+    function playerObject(name, figure, x, y, a, r) {
+        var tloc = getScreenCoordinate(x, y, a);
+
+        this.name = name;
+
+        this.figure = figure;
+
+        this.x = x;
+        this.y = y;
+        this.nx = x;
+        this.ny = y;
+        this.a = a;
+
+        this.r = r;
+        this.hr = r; //Head Rotation
+
+        this.h = tloc[0];
+        this.v = tloc[1];
+        this.z = tloc[2] + 10;
+
+        this.pStartLScreen = [];
+        this.pDestLScreen = [];
+        this.mvStart = null;
+
+        this.dead = false;
+        this.unbeatable = false;
+        this.visible = true;
+
+        this.gameHilite = null;
+
+        this.cycle = 0;
+        this.anim = "";
+        this.headanim = "";
+        this.frameRepeat = false;
+        this.maxFrame = 0;
+        this.frame = 0;
+    }
+    playerObject.prototype.setCoords = function (x, y, a, r, hr) {
+        var loc = getScreenCoordinate(x, y, a);
+        this.r = r;
+        this.hr = hr;
+        this.x = x;
+        this.y = y;
+        this.h = loc[0];
+        this.v = loc[1];
+        this.pStartLScreen = [loc[0], loc[1]];
+    }
+    playerObject.prototype.setNextCoords = function (x, y, a) {
+        var loc = getScreenCoordinate(x, y, a);
+        this.nx = x;
+        this.ny = y;
+        this.pDestLScreen = [loc[0], loc[1]];
+        this.z = loc[2] + 10;
+        this.mvStart = Date.now();
+    }
+    playerObject.prototype.render = function () {
+        if (this.gameHilite != null) drawSprite(this.gameHilite, this.h, this.v);
+        if (this.visible) {
+            drawSprite("player" + this.anim + "_a_" + this.figure[0] + "_" + this.r + "_" + this.frame, this.h, this.v); // Body
+            drawSprite("player" + this.headanim + "_b_" + this.figure[1] + "_" + this.hr + "_0", this.h, this.v); // Head
+        }
+    }
+    playerObject.prototype.update = function () {
+        this.cycle = (this.cycle + 1) % 64;
+
+        if (this.unbeatable) {
+            this.visible = ((this.cycle % 16) > 12) ? false : true;
+        }
+
+        if (this.x != this.nx || this.y != this.ny) {
+            var tFactor = parseFloat((Date.now() - this.mvStart) / 450);
+            if (tFactor > 1) tFactor = 1;
+            this.h = ((this.pDestLScreen[0] - this.pStartLScreen[0]) * tFactor) + this.pStartLScreen[0];
+            this.v = ((this.pDestLScreen[1] - this.pStartLScreen[1]) * tFactor) + this.pStartLScreen[1];
+            if (this.h == this.pDestLScreen[0] && this.v == this.pDestLScreen[1]) {
+                this.x = this.nx;
+                this.y = this.ny;
+            }
+        }
+
+        if (this.anim != "") {
+            if ((this.cycle % 8) == 4 && this.maxFrame != 0) {
+                if (this.frameRepeat) {
+                    this.frame = (this.frame + 1) % this.maxFrame;
+                } else {
+                    if (this.frame <= this.maxFrame - 1) this.frame++;
+                }
+
+            }
+        }
+    }
+    playerObject.prototype.setStatus = function (status) {
+        if (_lumisota && status == "walk") status = "run";
+        if ("_" + status == this.anim) return; // Already has this status going.
+        let statusData = _statuses[status];
+        this.anim = (status != "") ? "_" + status : "";
+        this.frame = 0;
+        this.maxFrame = statusData.maxFrame;
+        this.frameRepeat = statusData.repeat;
+        this.headanim = (statusData.head) ? "_" + status : "";
+        //console.log(`STATUS: ${status} MaxFrame: ${this.maxFrame}`);
+    }
+
+    function handleXtras(userName, xtras) {
+        console.log(userName);
+        console.log(xtras);
+        if (userName != _username.toUpperCase()) return; // You are not talking with me :(
+        let user = _objects["PLAYER_" + userName];
+        let bar = _windows["arenaBar"];
+        if (user == null || bar == null) return; // Hm something is wrong...
+
+        if (xtras.includes("balls")) {
+            bar.snowballs = 7;
+            bar.maxsnowballs = 7;
+            console.log("Balls!");
+        }
+        if (xtras.includes("energy")) {
+            bar.extraEnergy = true;
+            bar.energy = 14;
+            console.log("Energy");
+        }
+    }
+
+    function handleCarrySb(userName, amount) {
+        if (userName != _username.toUpperCase()) return; // Its not me :(
+        let user = _objects["PLAYER_" + userName];
+        let bar = _windows["arenaBar"];
+        if (user == null || bar == null) return; // I dont like inexistent player so return it.
+
+        bar.snowballs = Number(amount);
+    }
+
+    function handlePlayerStatus(userName, status) {
+        let user = _objects["PLAYER_" + userName];
+        if (user == null) return;
+
+        let energy = status[0];
+        let team = status[1];
+        let unbeatable = status[2] == "true";
+        let dead = status[3];
+
+        if (userName == _username.toUpperCase()) { // Its me!
+            user.gameHilite = team + "_player_hilite";
+            let bar = _windows["arenaBar"];
+            if (bar == null) return;
+            bar.isRedTeam = (team == "red");
+            bar.energy = Number(energy);
+        } else {
+            user.gameHilite = team + "_member_hilite";
+        }
+
+        if (!unbeatable) user.visible = true;
+        user.unbeatable = unbeatable;
+    }
+
+    _statuses = {
+        "": { "anim": "", "maxFrame": 0, "repeat": false, "head": false },
+        "mv": { "anim": "walk" },
+        "walk": { "anim": "walk", "maxFrame": 4, "repeat": true, "head": false },
+        "run": { "anim": "run", "maxFrame": 4, "repeat": true, "head": true },
+        "sit": { "anim": "sit", "maxFrame": 0, "repeat": false, "head": false },
+        "throwing": { "anim": "throw" },
+        "throw": { "anim": "throw", "maxFrame": 1, "repeat": false, "head": true },
+        "makesb": { "anim": "makesb", "maxFrame": 0, "repeat": false, "head": true }
+    };
+    //_statuses = { "walk": 4, "sit": 0, "throw": 2 };
+
+    function playerMove(id, x, y, a, toX, toY, toA, r, hr) {
+        var player = _objects["PLAYER_" + id];
+        if (player == null) return;
+        player.setCoords(x, y, a, r, hr);
+        player.setNextCoords(toX, toY, toA);
+    }
+    //#endregion
+
+    //#region Window Objects
+
+    function testResult() {
+        changeBackground("results");
+        let tst = { "blueTeam": [{ "name": "Joao", "score": ["0", "0", "0"] }, { "name": "Joao3", "score": ["0", "0", "0"] }, { "name": "aapo", "score": ["0", "0", "0"] }, { "name": "sampo", "score": ["0", "0", "0"] }], "redTeam": [{ "name": "Joao2", "score": ["0", "0", "0"] }], "redScore": "0", "blueScore": "0" };
+        _windows["resultWindow"] = new resultWindow(tst);
+    }
+
+    function resultWindow(data) {
+        this.results = data;
+    }
+    resultWindow.prototype.render = function () {
+        drawSprite("lobby_sign", 17, 343);
+
+        drawText("Nimi          plus    miinus  yht.            Nimi          plus    miinus  yht.", 248, 200, "bold 9px Verdana", null, "#AAAAAA");
+
+        for (let i = 0; i < this.results.blueTeam.length; i++) {
+            this.drawResult(this.results.blueTeam[i], i, false);
+        }
+        for (let i = 0; i < this.results.redTeam.length; i++) {
+            this.drawResult(this.results.redTeam[i], i, true);
+        }
+        drawText(this.results.blueScore, 365, 289, "bold 9px Verdana", 31, "white");
+        drawText(this.results.redScore, 550, 289, "bold 9px Verdana", 31, "white");
+    }
+    resultWindow.prototype.drawResult = function (data, index, isRedTeam) {
+        let offsetV = 218 + (index * 17);
+        let offsetH = (isRedTeam) ? 183 : 0;
+        drawText(data.name, 248 + offsetH, offsetV, "bold 9px Verdana", null, "white");
+        drawText(data.score[0], 298 + offsetH, offsetV, "bold 9px Verdana", 31, "#AAAAAA");
+        drawText(data.score[1], 328 + offsetH, offsetV, "bold 9px Verdana", 31, "#AAAAAA");
+        drawText(data.score[2], 358 + offsetH, offsetV, "bold 9px Verdana", 31, "white");
+    }
+    resultWindow.prototype.update = function () {
+
+    }
+    resultWindow.prototype.onClick = function () {
+        if (_cursor.x > 17 && _cursor.x < 42 && _cursor.y > 343 && _cursor.y < 375) {
+            wsSend("ReturnToLobby");
+        }
+    }
+    resultWindow.prototype.onKeyDown = function () { }
+
+    function arenaBarWindow() { // roomBar when lobby
+        this.chatText = "";
+
+        this.isRedTeam = false;
+
+        this.extraEnergy = false;
+        this.energy = 10;
+
+        this.snowballs = 5;
+        this.maxsnowballs = 5;
+
+        this.hoveringButton = false;
+    }
+    arenaBarWindow.prototype.render = function () {
+        drawSprite("arenaBar", 320, 459);
+
+        let boffset = (this.maxsnowballs > 5) ? 11 : 16;
+        let bname = (this.maxsnowballs > 5) ? "i_snowball_small" : "i_snowball";
+
+        if (this.extraEnergy) {
+            let eoffset = (this.isRedTeam) ? 1639 : 1596;
+            ctx.drawImage(Resources, this.energy * 5.5, eoffset, 11, 43, 117, 432, 11, 43);
+        } else {
+            let eoffset = (this.isRedTeam) ? 1568 : 1540;
+            ctx.drawImage(Resources, (10 * this.energy), eoffset, 10, 28, 117, 447, 10, 28);
+
+        }
+
+        for (let i = 0; i < this.maxsnowballs; i++) {
+            let small = (this.snowballs > i) ? "" : "_e";
+            drawSprite(bname + small, 152 + (i * boffset), 453);
+        }
+
+        drawText(this.chatText, 298, 465, "9px Verdana", null, "black");
+        drawButton("Make Snowball", 145, 462, 77, this.hoveringButton);
+    }
+    arenaBarWindow.prototype.update = function () {
+        this.hoveringButton = false;
+        if (isMouseOverButton(145, 462, 77)) {
+            this.hoveringButton = true;
+        }
+    }
+    arenaBarWindow.prototype.onClick = function () {
+        if (this.hoveringButton) {
+            wsSend("MakeSnowball");
+        }
+    }
+    arenaBarWindow.prototype.onKeyDown = function (event) {
+        if (event.keyCode == 8) {
+            this.chatText = this.chatText.slice(0, -1);
+        } else if (event.keyCode == 13) {
+            wsSend("CHAT " + this.chatText);
+            this.chatText = "";
+        } else if (event.key.length == 1) {
+            this.chatText += event.key;
+        }
+    }
+
+    function roomBarWindow() {
+        this.tCursor = "|";
+        this.cycle = 0;
+        this.chatText = "";
+    }
+
+    roomBarWindow.prototype.render = function () {
+        drawSprite("lobby_bar", 263, 458);
+        drawText(this.chatText + this.tCursor, 62, 463, "9px Verdana", null, "black");
+    }
+    roomBarWindow.prototype.update = function () {
+        this.cycle = (this.cycle + 1) % 64;
+        this.tCursor = (this.cycle > 32) ? "|" : "";
+    }
+    roomBarWindow.prototype.onClick = function () { }
+    roomBarWindow.prototype.onKeyDown = function () {
+        if (event.keyCode == 8) {
+            this.chatText = this.chatText.slice(0, -1);
+        } else if (event.keyCode == 13) {
+            wsSend("CHAT " + this.chatText);
+            this.chatText = "";
+        } else if (event.key.length == 1) {
+            this.chatText += event.key;
+        }
+    }
+
+    function createMatchWindow() {
+        this.texts = [
+            { t: getText("cm_title"), h: 204, v: 153, f: "bold 9px Verdana", c: "white", rA: false },
+            { t: getText("cm_match_name"), h: 196, v: 187, f: "bold 9px Verdana", c: "white", rA: true },
+            { t: getText("cm_duration"), h: 196, v: 212, f: "bold 9px Verdana", c: "white", rA: true },
+            { t: getText("cm_bots"), h: 196, v: 237, f: "bold 9px Verdana", c: "white", rA: true },
+            { t: getText("cm_im"), h: 196, v: 268, f: "bold 9px Verdana", c: "white", rA: true },
+            { t: getText("cm_green"), h: 227, v: 260, f: "bold 9px Verdana", c: "white", rA: false },
+            { t: getText("cm_red"), h: 227, v: 278, f: "bold 9px Verdana", c: "white", rA: false },
+            { t: getText("cm_team"), h: 293, v: 268, f: "bold 9px Verdana", c: "white", rA: false },
+            { t: getText("cm_warning1"), h: 120, v: 298, f: "bold 8px Arial", m: 243, c: "#B0BCE7", rA: false },
+            { t: getText("cm_warning2"), h: 100, v: 308, f: "bold 8px Arial", m: 278, c: "#B0BCE7", rA: false }
+        ];
+        this.tCursor = "|";
+        this.cycle = 0;
+        this.dragTime = false;
+        this.dragBots = false;
+        this.hoveringOk = false;
+        this.hoveringCancel = false;
+        this.time = 3;
+        this.bots = 0
+        this.matchName = "";
+        this.redTeam = true;
+    }
+    createMatchWindow.prototype.render = function () {
+        drawSprite("createMatchDialog", 249, 237);
+        for (let i = 0; i < this.texts.length; i++) {
+            let data = this.texts[i];
+            drawText(data.t, data.h, data.v, data.f, data.m, data.c, data.rA);
+        }
+
+        drawText(this.matchName + this.tCursor, 211, 188, "bold 9px Verdana", null, "black");
+
+        let check = (this.redTeam) ? ["checkbox", "checkbox_checked"] : ["checkbox_checked", "checkbox"];
+
+        drawSprite("scrollbar", 235 + ((this.time - 1) * 10), 203);
+        drawText(this.time, 210, 213, "bold 9px Verdana", null, "black");
+        drawSprite("scrollbar", 235 + (this.bots * 23), 228);
+        drawText(this.bots, 210, 238, "bold 9px Verdana", null, "black");
+
+        drawSprite(check[0], 212, 257);
+        drawSprite(check[1], 212, 275);
+
+        drawButton("ok", 202, 322, 31, this.hoveringOk);
+        drawButton("Cancel", 249, 322, 41, this.hoveringCancel);
+    }
+    createMatchWindow.prototype.update = function () {
+        this.cycle = (this.cycle + 1) % 64;
+        this.tCursor = (this.cycle > 32) ? "|" : "";
+        this.hoveringOk = false;
+        this.hoveringCancel = false;
+        if (isMouseOverButton(202, 322, 31)) {
+            this.hoveringOk = true;
+        }
+        if (isMouseOverButton(249, 322, 41)) {
+            this.hoveringCancel = true;
+        }
+    }
+    createMatchWindow.prototype.onClick = function () {
+        if (_cursor.x > 234 && _cursor.x < 332 && _cursor.y > 201 && _cursor.y < 219) {
+            this.dragTime = true;
+        }
+        if (_cursor.x > 234 && _cursor.x < 332 && _cursor.y > 226 && _cursor.y < 244) {
+            this.dragBots = true;
+        }
+        if (_cursor.x > 204 && _cursor.x < 220 && _cursor.y > 250 && _cursor.y < 264) {
+            this.redTeam = false;
+        }
+        if (_cursor.x > 204 && _cursor.x < 220 && _cursor.y > 268 && _cursor.y < 282) {
+            this.redTeam = true;
+        }
+        if (this.hoveringOk || this.hoveringCancel) {
+            if (this.hoveringOk) {
+                if (this.matchName.length == 0) { alert("Laita pelille nimi!"); return; }
+                let teamName = (this.redTeam) ? "red" : "blue";
+                wsSend(`CreateGame ${this.matchName};${this.time};${this.bots};${teamName}`);
+            }
+
+            delete _windows['createMatchDialog'];
+            _windows["roomBar"] = new roomBarWindow();
+        }
+
+    }
+    createMatchWindow.prototype.mouseMove = function () {
+        if (this.dragTime) {
+            this.time = Math.trunc((_cursor.x - 225) / 10);
+            if (this.time > 10) this.time = 10;
+            if (this.time < 1) this.time = 1;
+        }
+        if (this.dragBots) {
+            this.bots = Math.trunc((_cursor.x - 225) / 23);
+            if (this.bots > 4) this.bots = 4;
+            if (this.bots < 0) this.bots = 0;
+        }
+    }
+    createMatchWindow.prototype.mouseUp = function () {
+        this.dragTime = false;
+        this.dragBots = false;
+    }
+    createMatchWindow.prototype.onKeyDown = function () {
+        if (event.keyCode == 8) {
+            this.matchName = this.matchName.slice(0, -1);
+        } else if (event.key.length == 1) {
+            this.matchName += event.key;
+        }
+    }
+
+
+
+    function gameBoardWindow() {
+        this.games = [];
+        this.scrollOffset = 0;
+        this.ownGame = null;
+
+        this.hovering = [false, false, false, false, false];
+    }
+    gameBoardWindow.prototype.setGames = function (gameList, ownGame) {
+        this.scrollOffset = 0;
+        this.games = gameList;
+        this.ownGame = ownGame;
+    }
+    gameBoardWindow.prototype.drawGame = function (gameData, slot, owner) {
+        let offsets = (owner) ? [35, 46, 53] : [164 + (88 * slot), 175 + (88 * slot), 179 + (88 * slot)];
+
+        let bgImg = (gameData.started) ? "ongoing_game_background" : "starting_game_background";
+        drawSprite(bgImg, 499, offsets[0]);
+
+        drawText(`${gameData.name} - ${gameData.mins}:00`, 501, offsets[1], "bold 9px Verdana", 132);
+        for (let i = 1; i < 5; i++) {
+            let userName = (i < gameData.greenTeam.length) ? gameData.greenTeam[i] : "- - -";
+            drawText(userName, 500, offsets[2] + (i * 13), "bold 9px Verdana", 60);
+        }
+        for (let i = 1; i < 5; i++) {
+            let userName = (i < gameData.redTeam.length) ? gameData.redTeam[i] : "- - -";
+            drawText(userName, 575, offsets[2] + (i * 13), "bold 9px Verdana", 59);
+        }
+
+    }
+    gameBoardWindow.prototype.render = function () {
+        var slot = 0;
+        for (let i = this.scrollOffset; i < this.games.length; i++) {
+
+            if (slot > 2) break; // Not enought space!
+            this.drawGame(this.games[i], slot, false);
+
+            if (slot < 4) {
+                drawButton("Join", 514, 225 + (88 * slot), 37, false);
+                drawButton("Join", 583, 225 + (88 * slot), 37, false);
+            }
+            slot++;
+        }
+
+        if (this.ownGame != null) {
+            this.drawGame(this.ownGame, 0, true);
+            drawButton("Start Game", 498, 15, 75, this.hovering[0]);
+            drawButton("Cancel", 585, 15, 45, this.hovering[1]);
+        } else {
+            drawButton("CREATE MATCH", 498, 15, 135, this.hovering[2]);
+        }
+
+        drawSprite("scrollup", 567, 156);
+        drawSprite("scrolldown", 568, 425);
+    }
+    gameBoardWindow.prototype.update = function () {
+        this.hovering = [false, false, false, false, false];
+        if (this.ownGame != null) {
+            if (isMouseOverButton(498, 15, 75)) this.hovering[0] = true;
+            if (isMouseOverButton(585, 15, 45)) this.hovering[1] = true;
+        } else {
+            if (isMouseOverButton(498, 15, 135)) this.hovering[2] = true;
+        }
+    }
+    gameBoardWindow.prototype.onClick = function () {
+        if (this.hovering[0]) wsSend("StartGame " + this.ownGame.name);
+        if (this.hovering[1]) wsSend("UndoGame " + this.ownGame.name);
+        if (this.hovering[2]) {
+            delete _windows['roomBar'];
+            _windows["createMatchDialog"] = new createMatchWindow();
+        }
+    }
+    gameBoardWindow.prototype.scrollup = function () {
+        if (this.scrollOffset > 0) this.scrollOffset--;
+    }
+    gameBoardWindow.prototype.scrolldown = function () {
+        if (this.scrollOffset < this.games.length - 1) this.scrollOffset++;
+    }
+    gameBoardWindow.prototype.onKeyDown = function () { }
+
+
+    function balloonWindow(h, v) {
+        this.bMoving = true;
+
+        this.animStart = Date.now();
+
+        this.startY = v;
+        this.destY = v - 40;
+
+        this.h = h;
+        this.v = v;
+    }
+    balloonWindow.prototype.render = function () {
+        drawSprite("wall1-0_a_0_0_0", this.h, this.v);
+    }
+    balloonWindow.prototype.update = function () {
+        if (this.v < 0) {
+            // Destroy this
+        }
+
+        if (this.bMoving) {
+            let a = (Date.now() - this.animStart) / 60;
+            console.log(a);
+            if (a >= 1) {
+                a = 1;
+                this.bMoving = false;
+            }
+
+            this.v = (a * (this.destY - this.startY) + this.startY);
+        }
+
+    }
+    balloonWindow.prototype.moveUp = function () {
+        this.destY = this.destY - 24;
+        this.startY = this.v;
+        this.animStart = Date.now();
+        this.bMoving = true;
+    }
+    balloonWindow.prototype.onClick = function () { }
+    balloonWindow.prototype.onKeyDown = function () { }
+    //#endregion
+
+    //#region Room Geometry
+
+    var xoffset = 260;
+    var yoffset = 175;
+
+    function getScreenCoordinate(locX, locY, height) {
+        var locH = ((locX - locY) * 14) + xoffset;
+        var locV = (((locY + locX) * 7) + yoffset) - (height * 9);
+        var locZ = 1000 * (locX + locY + 1);
+        return [locH, locV, locZ];
+    }
+
+    function getWorldCoordinate(locX, locY) {
+        locX += 0;
+        locY += 7;
+        var x = Math.trunc(((locX - 14 - xoffset) / 28) + ((locY - yoffset) / 14));
+        var y = Math.trunc(((locY - yoffset) / 14) - ((locX - 14 - xoffset) / 28));
+
+        var height = -1
+        if (y >= 0 && y < _heightmap.length) {
+            if (x >= 0 && x < _heightmap[y].length) {
+                height = _heightmap[y][x];
+            }
+        }
+
+        if (height == 0) {
+            return [x, y, height]
+        } else {
+            for (var i = 1; i < 9; i++) {
+                x = Math.trunc(((locX - 14 - xoffset) / 28.0) + ((locY + (i * 9) - yoffset) / 14.0));
+                y = Math.trunc(((locY + (i * 9) - yoffset) / 14.0) - ((locX - 14 - xoffset) / 28.0));
+                height = -1
+                if (y >= 0 && y < _heightmap.length) {
+                    if (x >= 0 && x < _heightmap[y].length) {
+                        height = _heightmap[y][x];
+                    }
+                }
+                if (height == i) return [x, y, height];
+            }
+
+        }
+        return null;
+    }
+    //#endregion
+
+    //#region Event Listeners
+    _cursor = { x: 0, y: 0, dragging: false, click: false };
+    cnv.addEventListener('mousedown', function (event) {
+        var tButton = event.button; //0 = Esq 1 = Meio 2 = Direito
+
+        handleWindowClick();
+        handleWorldClick();
+    });
+
+    cnv.addEventListener('mouseup', function (event) {
+        if (_windows['createMatchDialog'] != null) _windows['createMatchDialog'].mouseUp();
+    });
+
+    cnv.addEventListener('mousemove', function (event) {
+        var x = event.pageX - cnv.offsetLeft + cnv.clientLeft,
+            y = event.pageY - cnv.offsetTop + cnv.clientTop;
+
+        _cursor.x = x;
+        _cursor.y = y;
+
+        if (_windows['createMatchDialog'] != null) _windows['createMatchDialog'].mouseMove();
+    });
+
+    window.addEventListener('keydown', function (event) {
+        Object.values(_windows).forEach(tObj => { tObj.onKeyDown(event); });
+        // console.log(`keyCode: ${event.keyCode} key:${event.key} key:${String.fromCharCode(event.keyCode)}`);
+    });
+
+
+    function handleWindowClick() {
+        Object.values(_windows).forEach(tObj => { tObj.onClick(); });
+    }
+
+    function handleWorldClick() {
+        var coords = getWorldCoordinate(_cursor.x, _cursor.y);
+        if (_playerOverCursor != null) {
+            wsSend(`ThrowSnowball auto ${_playerOverCursor.name} 40`); // ThrowSnowball 16 27 30
+        } else {
+            if (coords != null) wsSend(`Move ${coords[0]} ${coords[1]}`);
+        }
+    }
+
+
+    function getPlayerUnderCursor() {
+        var objects = Object.values(_objects);
+        for (let i = 0; i < objects.length; i++) {
+            let object = objects[i];
+            if (!(object instanceof playerObject)) continue;
+            if (object.name.toUpperCase() == _username.toUpperCase()) continue;
+            if (_cursor.x < (object.h + 10) || _cursor.x > (object.h + 10) + 13) continue;
+            if (_cursor.y < (object.v - 30) || _cursor.y > (object.v - 30) + 31) continue;
+            return object;
+        }
+        return null;
+    }
+    //#endregion
+
+    function changeBackground(name) {
+        if (_backgrounds[name] == null) return;
+        _background = _backgrounds[name].elements;
+        _windows = {};
+    }
+
+    function secretDecode(secretKey) {
+        var keyTableLen = secretKey.length / 2, mod2 = keyTableLen % 2;
+        var key = secretKey.substring(keyTableLen).toLowerCase(), table = secretKey.substring(0, keyTableLen).toLowerCase();
+        var a, sum = 0;
+        for (var i = 0; i < keyTableLen; i++) {
+            a = table.indexOf(key.charAt(i));
+            if (a % 2 == 0) a *= 2;
+            if (i % 3 == 0) a *= 3;
+            if (a < 0) a = mod2;
+
+            sum += a;
+        }
+
+        return sum;
+    }
+
+    // #region Draw Functions
+
+    function hoveringElement(ele) {
+        var data = _resources[ele.name];
+        if (data == null) return false;
+        if (_cursor.x < (ele.loc.h - data.rH) || _cursor.x > ((ele.loc.h - data.rH) + data.W)) return false;
+        if (_cursor.y < (ele.loc.v - data.rV) || _cursor.y > ((ele.loc.v - data.rV) + data.H)) return false;
+        return true;
+    }
+
+    function drawElement(ele) {
+        // I like 300 lines long if statements! :)
+        if (ele.type == 'shape') {
+            drawShape(ele.loc.h, ele.loc.v, ele.size.w, ele.size.h, ele.color);
+        } else if (ele.type == 'text') {
+            drawText(ele.text, ele.loc.h, ele.loc.v, ele.font, ele.color);
+        } else {
+            var name = (ele.hover) ? ele.name + "_hi" : ele.name;
+            drawSprite(name, ele.loc.h, ele.loc.v);
+        }
+    }
+
+    function isMouseOverButton(x, y, size) {
+        if (_cursor.x < x || _cursor.x > x + size) return false;
+        if (_cursor.y < y || _cursor.y > y + 13) return false;
+        return true;
+    }
+
+    function drawButton(text, x, y, size, hovering = false) {
+        let offset = (!hovering) ? 0 : 13;
+        ctx.drawImage(Resources, 1403, 76 + offset, 3, 13, x, y, 3, 13);
+        ctx.drawImage(Resources, 1406, 76 + offset, 1, 13, x + 3, y, size, 13);
+        ctx.drawImage(Resources, 1407, 76 + offset, 3, 13, x + size + 3, y, 3, 13);
+        ctx.fillStyle = "black";
+        ctx.font = "bold 8px Arial";
+        ctx.fillText(text, x + ((size / 2) - ctx.measureText(text).width / 2), y + 10);
+    }
+
+    function drawButton2(text, x, y, space = 0) {
+        let textSize = ctx.measureText(text).width + (space * 2);
+        ctx.drawImage(Resources, 1403, 76, 3, 13, x, y, 3, 13);
+        ctx.drawImage(Resources, 1406, 76, 1, 13, x + 3, y, textSize, 13);
+        ctx.drawImage(Resources, 1407, 76, 3, 13, x + textSize + 3, y, 3, 13);
+        ctx.fillStyle = "black";
+        ctx.font = "bold 9px Verdana";
+        ctx.fillText(text, (x + 3) + space, y + 10);
+    }
+
+    function drawSprite(name, x, y) {
+        var data = _resources[name];
+        if (data != null) ctx.drawImage(Resources, data.sH, data.sV, data.W, data.H, x - data.rH, y - data.rV, data.W, data.H);
+    }
+
+    function drawText(text, x, y, font = "Verdana 9px", maxSize, color = "#FFFFFF", rightAlignment = false) {
+        ctx.font = font;
+        ctx.fillStyle = color;
+        if (maxSize != null) x += (maxSize / 2) - (ctx.measureText(text).width / 2);
+        if (rightAlignment) x -= ctx.measureText(text).width;
+        ctx.fillText(text, x, y);
+    }
+
+    function drawShape(x, y, w, h, color) {
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, w, h);
+    }
+    //#endregion
+
+    //#region Game Loop
+
+    function gameStart() {
+        ctx.imageSmoothingEnabled = false;
+        loadGameImage();
+    }
+
+    function loadGameLanguage() {
+        fetch("language.json")
+            .then(response => response.json())
+            .then(data => {
+                _languages = data;
+                gameLoop();
+            });
+    }
+
+    function loadGameJSON() {
+        fetch("resources.json")
+            .then(response => response.json())
+            .then(data => {
+                _resources = data;
+                loadGameLanguage();
+            });
+    }
+
+    function loadGameImage() {
+        Resources = new Image();
+        Resources.src = "resources.png";
+        Resources.onload = function () {
+            loadGameJSON();
+        }
+    }
+
+    var fps = 60, start = Date.now(), frameDuration = 1000 / fps, lag = 0;
+    function gameLoop() {
+        requestAnimationFrame(gameLoop, cnv);
+
+        var current = Date.now(),
+            elapsed = current - start;
+        start = current;
+
+        lag += elapsed;
+
+        while (lag >= frameDuration) {
+            Update();
+            lag -= frameDuration;
+        }
+        var lagOffset = lag / frameDuration;
+        Render();
+    }
+
+    function Render() {
+        ctx.fillStyle = "rgba(0,0,0,1)";
+        ctx.fillRect(0, 0, cnv.width, cnv.height);
+
+        _background.forEach(elem => {
+            drawElement(elem);
+        });
+
+        renderHiliter();
+
+        Object.values(_objects).sort((a, b) => a.z - b.z).forEach(tObject => {
+            tObject.render();
+        });
+
+        Object.values(_windows).forEach(tObject => {
+            tObject.render();
+        });
+
+        if (_playerOverCursor != null && _lumisota) {
+            drawText(_playerOverCursor.name, _playerOverCursor.h - 3, _playerOverCursor.v - 33, "bold 9px Verdana", 31, "#777777");
+            drawSprite("autosnaphilite", _playerOverCursor.h, _playerOverCursor.v);
+        }
+    }
+
+    function renderHiliter() {
+        var coords = getWorldCoordinate(_cursor.x, _cursor.y);
+        if (coords != null) {
+            var tLoc = getScreenCoordinate(coords[0], coords[1], coords[2]);
+            drawSprite("blockhilite", tLoc[0], tLoc[1]);
+        }
+    }
+
+    _playerOverCursor = null;
+    function Update() {
+        Object.values(_objects).forEach(tObject => {
+            tObject.update();
+        });
+        Object.values(_windows).forEach(tObject => {
+            tObject.update();
+        });
+
+        _playerOverCursor = getPlayerUnderCursor();
+    }
+
+
+    function createMatch() {
+        wsSend("CreateGame TestMatch;1;0;red");
+    }
+    function startMatch() {
+        wsSend("StartGame TestMatch");
+    }
+    //#endregion
+    ws = new WebSocket(_server);
+    ws.binaryType = 'arraybuffer';
+
+    ws.onopen = function () {
+        console.log('%cConnected!', 'color: green');
+    }
+    ws.onclose = function () {
+        console.log('%cDisconnect!', 'color: red');
+    }
+    ws.onerror = function () {
+        console.log('%cWebsocket Error!', 'color: red');
+    }
+    waitingData = "";
+    ws.onmessage = function (msg) {
+        var decoder = new TextDecoder('UTF-8');
+        //console.log(`Data size: ${decoder.decode(msg.data).length}`);
+        var str = decoder.decode(msg.data).substring(1);
+        console.log(`%c<< ${str.replaceAll("\r", "{r}")}`, 'color: yellow');
+
+        let t = (waitingData + str);
+        if (!t.endsWith("##")) {
+            waitingData = t;
+            return;
+        }
+
+        let data = t.split("##");
+        for (let i = 0; i < data.length - 1; i++) {
+            handleData(data[i]);
+            waitingData = "";
+        }
+
+    }
+
+    function wsSend(str) {
+        var len = "" + str.length;
+        while (len.length < 4) {
+            len = len + " ";
+        }
+        str = len + str;
+
+        var encoder = new TextEncoder();
+        ws.send(encoder.encode(str));
+        console.log(`%c>> ${str}`, 'color: orange');
+    }
+
+    function handleData(str) {
+        var data = str.split("\r");
+        var header = data[0].toUpperCase().replace("#", "");
+        var content = str.replace(header, "").replace("#", "").trim();
+
+        // console.log(`Header: >${header}< Data: >${content.replace("\r", "{r}")}<`);
+        if (header.includes("OBJECTS")) {
+            _objects = {};
+            if (header.includes("LOBBY")) {
+                changeBackground("lobby");
+                xoffset = 262;
+                yoffset = 176;
+                _lumisota = false;
+                _windows["roomBar"] = new roomBarWindow();
+            }
+            if (header.includes("LUMISOTA")) {
+                changeBackground("lumisota3");
+                xoffset = 302;
+                yoffset = -155;
+                _lumisota = true;
+                _windows["arenaBar"] = new arenaBarWindow();
+            }
+            var objects = content.split("\r");
+            for (let i = 0; i < objects.length; i++) {
+                var data = objects[i].split(" ");
+                var objectData = (data.length != 6) ? "_0_0_0" : "_0_" + data[5] + "_0";
+                var x = (data.length == 7) ? (Number(data[2]) + (Number(data[5]) - 1)) : Number(data[2]);
+                var y = (data.length == 7) ? (Number(data[3]) + (Number(data[6]) - 1)) : Number(data[3]);
+
+                for (let i = 0; i < _layers.length; i++) {
+                    let name = (data[1] + "_" + _layers[i] + objectData).toLowerCase();
+                    let resource = _resources[name];
+                    if (resource == null) break;
+                    let zshift = (resource.zshift != null) ? resource.zshift : 0;
+                    _objects["OBJECT_" + data[0] + "_" + _layers[i]] = new mapObject(data[0], name, x, y, data[4], data[5], i + zshift);
+                }
+
+            }
+            return;
+        }
+
+        switch (header) {
+            case "SECRET_KEY": {
+
+                wsSend(`KEYENCRYPTED ${secretDecode(content)}`);
+                wsSend(`VERSIONCHECK v20000308_SMS`);
+                wsSend(`CLIENTIP MacromediaSecretIPAddressCookie: bd8e53e42066987ac942eecc`);
+
+                wsSend(`LOGIN ${_username} ${_password}`);
+		
+		_password = "";
+            } break;
+            case "STATUS": {
+                wsSend("STATUSOK");
+                var userStatus = content.split("\r");
+
+                for (let i = 0; i < userStatus.length; i++) {
+                    var status = userStatus[i];
+                    if (status.includes("*")) continue;
+                    var statusSplit = status.split(" ");
+                    if (statusSplit.length < 2) continue;
+                    var userName = statusSplit[0].toUpperCase();
+                    if (_objects["PLAYER_" + userName] == null) continue; // Do not process inexistent players status.
+                    let player = _objects["PLAYER_" + userName];
+
+                    var userData = statusSplit[1].split(",");
+
+                    var currentX = Number(userData[0]);
+                    var currentY = Number(userData[1]);
+                    var currentHeight = Number(userData[2]);
+                    var dirHead = Number(userData[3]);
+                    var dirBody = Number(userData[4][0]);
+
+                    player.setCoords(currentX, currentY, currentHeight, dirBody, dirHead);
+
+                    var actionList = status.split("/");
+
+
+                    // Process all Statuses
+                    for (let k = 1; k < actionList.length; k++) {
+                        var actionSplit = actionList[k];
+                        var statusName = actionSplit.split(" ")[0];
+                        if (statusName == "playerst") {
+                            handlePlayerStatus(userName.toUpperCase(), actionSplit.split(" ")[1].split(","));
+                        } else if (statusName == "carrysb") {
+                            handleCarrySb(userName.toUpperCase(), actionSplit.split(" ")[1]);
+                        } else if (statusName == "xtras") {
+                            handleXtras(userName.toUpperCase(), actionSplit.split(" "));
+                        }
+                        if (statusName == "mv") {
+                            var statusData = actionSplit.split(" ")[1].split(",");
+                            playerMove(userName, currentX, currentY, currentHeight, Number(statusData[0]), Number(statusData[1]), Number(statusData[2][0]), dirBody, dirHead);
+                        }
+                        if (_statuses[statusName] != null) player.setStatus(_statuses[statusName].anim);
+
+                    }
+                }
+            }
+                break;
+            case "SNOWBALL": {
+                var ballData = content.split(" ");
+                var id = ballData[0].trim();
+                _objects["SNOWBALL_" + id] = new snowballObject(id, [Number(ballData[1]), Number(ballData[2]), Number(ballData[3])], [Number(ballData[4]), Number(ballData[5]), Number(ballData[6])], Number(ballData[7]));
+            } break;
+            case "ALLUNITS": { } break;
+            case "CHAT": { } break;
+            case "SHOUT": { } break;
+            case "WHISPER": { } break;
+            case "LOGOUT": {
+                let playerName = content.toUpperCase();
+                if (_objects["PLAYER_" + playerName] != null) delete _objects["PLAYER_" + playerName];
+            } break;
+            case "ERROR": {
+                //login in alert("Salasanasi oli väärin!") Wrong password
+                //Version not correct alert("Käytössäsi on vanha versio pelistä. Lataa uusi selaimesi reload-nappia käyttäen") Version error
+                //user already alert("Käyttäjätunnus on jo olemassa!") 
+            } break;
+            case "USERS": {
+                var userList = content.split("\r");
+                for (let i = 0; i < userList.length; i++) {
+                    var userData = userList[i].split(" ");
+                    if (userData.length < 6) continue;
+                    let figure = userData[1].split(",");
+                    _objects["PLAYER_" + userData[0].toUpperCase()] = new playerObject(userData[0], figure, Number(userData[2]), Number(userData[3]), Number(userData[4]), 1);
+                }
+            } break;
+            case "USEROBJECT": { } break;
+            case "SYSTEMBROADCAST": { } break;
+            case "SHOWPROGRAM": { } break;
+            case "HEIGHTMAP": {
+                _heightmap = content.split("\r");
+            } break;
+            case "GAMEBOARD": {
+                var games = content.split("\r");
+                var gameList = [];
+                var ownGame = null;
+                for (let i = 0; i < games.length; i++) {
+                    var gameObject = {};
+                    var game = games[i];
+                    var gameSplit = game.split("/");
+                    if (gameSplit < 2) continue;
+                    var gameData = gameSplit[1].split(" ");
+
+                    gameObject["name"] = gameSplit[0];
+                    gameObject["started"] = (gameData[1] == "true");
+                    gameObject["canJoin"] = (gameData[2] == "true");
+                    gameObject["ended"] = (gameData[3] == "true");
+                    gameObject["numOfPlayers"] = Number(gameData[4]);
+                    gameObject["maxPlayers"] = Number(gameData[5]);
+                    gameObject["mins"] = Number(gameData[7]);
+
+                    var splitTeams = game.split("/*");
+                    gameObject["greenTeam"] = splitTeams[1].substring(1).split(" ");
+                    gameObject["redTeam"] = splitTeams[2].substring(1).split(" ");
+
+                    if (gameData[6].toLowerCase() != _username) {
+                        gameList.push(gameObject);
+                    } else {
+                        ownGame = gameObject;
+                    }
+                }
+
+
+                if (_windows["gameboard"] == null) _windows["gameboard"] = new gameBoardWindow();
+                _windows["gameboard"].setGames(gameList, ownGame);
+
+            } break;
+            case "GAME_RESULTS": {
+                changeBackground("results");
+                let data = {};
+                let contentData = content.split("\r");
+
+                data["blueTeam"] = [];
+                data["redTeam"] = [];
+                data["redScore"] = contentData[0].split(" ")[1];
+                data["blueScore"] = contentData[1].split(" ")[1];
+
+                for (let i = 2; i < contentData.length; i++) {
+                    let userData = contentData[i].split(" ");
+                    let teamName = (userData[1] == "red") ? "redTeam" : "blueTeam";
+
+                    let score = ["+0", "-0", "0"];
+                    if (userData.length > 5) {
+                        let kills = "+" + Number(userData[2]);
+                        let deaths = "-" + (Number(userData[3]) + Number(userData[4]));
+                        let points = (Number(userData[5]) > 0) ? "+" + Number(userData[5]) : Number(userData[5]);
+                        score = [kills, deaths, points];
+                    }
+                    data[teamName].push({ "name": userData[0], "score": score });
+                }
+
+                _windows["resultWindow"] = new resultWindow(data);
+            } break;
+            default: {
+                console.log(`%cUnknown ${header}`, 'color: red');
+            }
+        }
+
+    }
+</script>

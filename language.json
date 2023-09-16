@@ -1,0 +1,33 @@
+{
+    "fi": {
+        "create_match": "PERUSTA UUSI PELI",
+        "start_match": "ALOITA PELI",
+        "cancel": "PERU",
+        "cm_title": "Perusta uusi peli",
+        "cm_match_name": "Pelin nimi:",
+        "cm_duration": "Kesto:",
+        "cm_bots": "Lumirobotteja:",
+        "cm_im": "Itse olen...",
+        "cm_green": "vihreässä",
+        "cm_red": "punaisessa",
+        "cm_team": "joukkueessa.",
+        "cm_warning1": "HUOM! LUMIROBOJA SISÄLTÄVISSÄ PELEISSÄ PELIN",
+        "cm_warning2": "LOPPUTULOS EI VAIKUTA PELAAJIEN KOKONAISPISTEISIIN",
+        "chair": "Klikkaamalla voit istua tälle tuolille"
+    },
+    "en": {
+        "create_match": "CREATE MATCH",
+        "start_match": "Start Game",
+        "cancel": "Cancel",
+        "cm_title": "Create a new game",
+        "cm_match_name": "Name for the game:",
+        "cm_duration": "Duration:",
+        "cm_bots": "Snowbots:",
+        "cm_im": "I am in the...",
+        "cm_green": "green",
+        "cm_red": "red",
+        "cm_team": "team.",
+        "cm_warning1": "ATTN! GAMES WITH SNOWBOTS IN THEM WILL NOT",
+        "cm_warning2": "AFFECT PLAYERS TOTAL POINTS."
+    }
+}
