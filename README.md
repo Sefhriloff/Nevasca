@@ -18,3 +18,5 @@ https://github.com/Sefhriloff/Nevasca/assets/41347100/f969b93c-4f43-4c47-a51f-b3
 1. **Download the Lumisota Server:** Begin by downloading the Lumisota server made by Ascii from this [link](https://puomi.tunk.org/snowstroem/files/).
 
 2. **Set Up websockify:** To connect your client to the Lumisota server, you'll need to use websockify. Start by following the instructions on the [websockify GitHub page](https://github.com/novnc/websockify).
+
+3. Open the index.html file and update the _server, _username, and _password variables with your specific login details to access the game server.
